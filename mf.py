@@ -6,6 +6,7 @@
 #
 try:
     import numpy
+    import math
 except:
     print "This implementation requires the numpy module."
     exit(0)
@@ -54,6 +55,50 @@ def matrix_factorization(R, P, Q, K, steps=5000, alpha=0.0002, beta=0.02):
     return P, Q.T
 
 ###############################################################################
+def RMSE(R,P,Q):
+    rmse = 0.0
+    N = len(R)
+    M = len(R[0])
+    for i in range(N):
+        for j in range(M):
+            if R[i][j] != 0.0:
+                rmse += pow(R[i][j] - numpy.dot(P[i,:],Q[j,:]), 2)
+    return math.sqrt(rmse)
+
+def topK_Hit_Ratio( R,users, items,K=5,relevent_bench=5):
+        Hk = 0.0
+        recall = 0.0
+        Nu = []
+        Nku = []
+        N = len(R)
+        M = len(items)
+        sumNku = 0.0
+        sumNu = 0.0
+
+        for i in range(N):
+            u = []
+            uNu = 0
+            uNku = 0
+            for j in range(M):
+                u.append(numpy.dot(users[i,:],items[j,:]))
+            u.sort(reverse = True)
+            for j in range(M):
+                if R[i][j] >= relevent_bench:
+                    uNu += 1
+                    if u.index(numpy.dot(users[i,:],items[j,:]))<K:
+                        uNku += 1
+            Nu.append(uNu)
+            Nku.append(uNku)
+        T = 0
+        for i in range(N):
+            if float(Nu[i]) > 0.0:
+                T += 1
+                sumNku += float(Nku[i])
+                sumNu += float(Nu[i])
+                Hk += Nku[i]/Nu[i]
+        Hk = Hk/T
+        recall = sumNku/sumNu
+        return Hk,recall
 
 if __name__ == "__main__":
     R = [
@@ -74,3 +119,9 @@ if __name__ == "__main__":
     Q = numpy.random.rand(M,K)
 
     nP, nQ = matrix_factorization(R, P, Q, K)
+
+    rmse = RMSE(R,nP,nQ)
+    print "rmse ",rmse
+
+    Hk,recall = topK_Hit_Ratio(R,nP,nQ,2,4)
+    print Hk,recall
