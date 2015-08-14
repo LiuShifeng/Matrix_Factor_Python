@@ -1,15 +1,11 @@
 #!/usr/bin/python
 #
-# Created by Shifeng Liu (20105)
+# Created by Shifeng Liu (2015)
 #
 # An implementation of matrix factorization
 #
-import pylab
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import os
 import numpy
-import pickle
 import math
 
 class ProbabilisticMatrixFactorization():
@@ -19,7 +15,8 @@ class ProbabilisticMatrixFactorization():
         self.learning_rate = .0001
         self.regularization_strength = beta
         self.Wm = Wm
-        
+        print Wm
+
         self.ratings = numpy.array(rating_tuples).astype(float)
         self.converged = False
 
@@ -53,8 +50,9 @@ class ProbabilisticMatrixFactorization():
             
             r_hat = numpy.sum(users[i] * items[j])
 
-            if rating == float(0.0) :
+            if rating == 0.0 :
                 sq_error += self.Wm * weight * (rating - r_hat)**2
+                print "Loss rating 0"
             else:
                 sq_error += weight * (rating - r_hat)**2
         L2_norm = 0
@@ -66,7 +64,7 @@ class ProbabilisticMatrixFactorization():
             for d in range(self.latent_d):
                 L2_norm += items[i, d]**2
 
-        return -sq_error - self.regularization_strength * L2_norm
+        return sq_error + self.regularization_strength * L2_norm
         
         
     def update(self):
@@ -84,7 +82,8 @@ class ProbabilisticMatrixFactorization():
             r_hat = numpy.sum(self.users[i] * self.items[j])
             
             for d in range(self.latent_d):
-                if rating == float(0.0):
+                if rating == 0.0:
+                    print "update rating 0 "
                     updates_o[i, d] += self.items[j, d] * (rating - r_hat) * weight * self.Wm
                     updates_d[j, d] += self.users[i, d] * (rating - r_hat) * weight * self.Wm
                 else:
@@ -99,11 +98,11 @@ class ProbabilisticMatrixFactorization():
 
             final_lik = self.loss(self.new_users, self.new_items)
 
-            if final_lik > initial_lik:
+            if final_lik < initial_lik:
                 self.apply_updates(updates_o, updates_d)
                 self.learning_rate *= 1.25
 
-                if final_lik - initial_lik < 10:
+                if initial_lik -  final_lik< 10:
                     self.converged = True
                     
                 break
@@ -227,6 +226,47 @@ class ProbabilisticMatrixFactorization():
                 rmse += weight * (rating - r_hat)**2
 
         return math.sqrt(rmse/T)
+
+    def topK_Hit_Ratio(self, users=None, items=None,K=5,relevent_bench=5):
+        if users is None:
+            users = self.users
+        if items is None:
+            items = self.items
+
+        Hk = 0.0
+        recall = 0.0
+        Nu = [0 for i in range(self.num_users)]
+        Nku = [0 for i in range(self.num_users)]
+        sumNku = 0.0
+        sumNu = 0.0
+
+        for rating_tuple in self.ratings:
+            if len(rating_tuple) == 3:
+                (i, j, rating) = rating_tuple
+                weight = 1
+            elif len(rating_tuple) == 4:
+                (i, j, rating, weight) = rating_tuple
+
+            if rating >= relevent_bench:
+                Nu[int(i)] += 1
+                u = []
+                for ii in range(self.num_items):
+                    u.append(numpy.sum(users[int(i)] * items[ii]))
+                u.sort(reverse = True)
+                r_hat = numpy.sum(users[int(i)] * items[j])
+                if u.index(r_hat) < K:
+                    Nku[int(i)] += 1
+
+        T = 0
+        for i in range(self.num_users):
+            if float(Nu[i]) > 0.0:
+                T += 1
+                sumNku += float(Nku[i])
+                sumNu += float(Nu[i])
+                Hk += Nku[i]/Nu[i]
+        Hk = Hk/T
+        recall = sumNku/sumNu
+        return Hk,recall
         
 
 def fake_ratings(noise=.25):
@@ -275,7 +315,7 @@ def real_ratings(noise=.25):
         
     # Get ratings per user.
     pwd=os.getcwd()
-    infile = open(os.path.join(pwd, 'ml-100k\u.data'), 'r')
+    infile = open(os.path.join(pwd, 'u.data'), 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
         f = (float(f[0]),float(f[1]),float(f[2]))
@@ -296,7 +336,7 @@ if __name__ == "__main__":
 
     #plot_ratings(ratings)
 
-    pmf = ProbabilisticMatrixFactorization(ratings, latent_d=5, beta=0.01,Wm=0.2)
+    pmf = ProbabilisticMatrixFactorization(ratings, latent_d=5, beta=0.01,Wm=0.0)
     
     liks = []
     print "before RMSE ",pmf.rmse()
@@ -307,9 +347,12 @@ if __name__ == "__main__":
         pass
     
     print "after RMSE ",pmf.rmse()
-
+    Hk,recall = pmf.topK_Hit_Ratio()
+    print Hk,recall
+    '''
     pmf.save_Users('Mf\Users.data')
     pmf.save_Items('MF\Items.data')
     pmf.print_latent_vectors()
     
     pmf.save_latent_vectors("models/")
+'''
