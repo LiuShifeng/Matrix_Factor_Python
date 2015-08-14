@@ -35,10 +35,6 @@ For example, the content of the input file to the script will look like:
 166,346,1
 298,474,4
 ...
-474,836,3
-537,445,3
-37,385,4
-```
 276,1090,1
 13,225,2
 12,203,3
