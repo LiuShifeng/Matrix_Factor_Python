@@ -50,7 +50,6 @@ def topK_Hit_Ratio(R ,users ,items ,K = 5 ,relevent_bench = 5):
         Nku = []
         N = len(users)
         M = len(items)
-        print N,M
         sumNku = 0.0
         sumNu = 0.0
 
@@ -62,7 +61,6 @@ def topK_Hit_Ratio(R ,users ,items ,K = 5 ,relevent_bench = 5):
                 u.append(np.dot(users[i,:],items[j,:].T))
             u.sort(reverse = True)
             for j in range(M):
-                print i,j
                 if float(R[i,j]) >= float(relevent_bench):
                     uNu += 1
                     if u.index(np.dot(users[i,:],items[j,:].T))<K:
