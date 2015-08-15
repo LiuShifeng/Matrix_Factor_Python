@@ -52,19 +52,21 @@ As pre requisites you need
 * This script implements Large-Scale Matrix Factorization with Distributed Stochastic Gradient Descent (DSGD-MF) in Spark.
 * The reference paper sets forth a solution for matrix factorization using minimization of sum of local losses. The solution involves dividing the matrix into strata for each iteration and performing sequential stochastic gradient descent within each stratum in parallel. The two losses considered are the plain non-zero square loss and the non-zero square loss with L2 regularization of parameters W and H.
 * DSGD-MF is a fully distributed algorithm i.e. both the data matrix V and factor matrices W and H can be carefully split and distributed to multiple workers for parallel computation without communication costs between the workers. Hence, it is a good match for implementation in a distributed in-memory data processing system like Spark.
-
+* if Wm = 0, it is the same to the basic version of Matrix Factorization. Otherwise, it is used for recommend system of recommending the topK items.
 
 ## Usage
 
 ```
 >>> spark-submit dsgd_mf.py <num_factors> <num_workers> <num_iterations> <beta_value> <lambda_value> <Wm_value> <inputV_filepath> <outputW_filepath> <outputH_filepath>
 ```
+Notice:
+It is recommended using the input file on hdfs and output file on local
 
 Example:
 
 ```
->>> spark-submit dsgd_mf.py 100 10 50 0.8 1.0 0.2 test.csv w.csv h.csv
->>> python eval_acc.py input/test.csv output/w.csv output/h.csv 
+>>> spark-submit dsgd_mf.py 100 10 50 0.8 1.0 0.2 u.csv w.csv h.csv
+>>> python eval_acc.py u.csv w.csv h.csv
 Reconstruction error: 0.826437682942
 ```
 
@@ -72,4 +74,6 @@ Reconstruction error: 0.826437682942
 
 ```
 Gemulla, Rainer, et al. "Large-scale matrix factorization with distributed stochastic gradient descent." Proceedings of the 17th ACM SIGKDD international conference on Knowledge discovery and data mining. ACM, 2011.
+Yang X, Steck H, Guo Y, et al. On top-k recommendation using social networks[C]//Proceedings of the sixth ACM conference on Recommender systems. ACM, 2012: 67-74.
+Yang X, Guo Y, Liu Y, et al. A survey of collaborative filtering based social recommender systems[J]. Computer Communications, 2014, 41: 1-10.
 ```
