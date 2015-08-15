@@ -30,13 +30,13 @@ def LoadSparseMatrix(csvfile):
                 maxI = int(line[1])
             row.append( int(line[0])-1 )
             col.append( int(line[1])-1 )
-            val.append( int(line[2]) )
+            val.append( float(line[2]) )
             select.append( (int(line[0])-1, int(line[1])-1) )
         return sparse.csr_matrix( (val, (row, col)),shape=(maxU,maxI) ), select
 
 def CalculateError(V, W, H, select):
 
-        diff = V-W*H
+        diff = V-W*H.T
         error = 0
         for row, col in select:
                 error += diff[row, col]*diff[row, col]
@@ -45,25 +45,10 @@ def CalculateError(V, W, H, select):
 print "---------------------------------------------------"
 print "Validation ..."
 print "---------------------------------------------------"
-'''
-logfile = sys.argv[1]
-print "The stderr will be logged to file ", logfile
-commandList = sys.argv[2:len(sys.argv)]
-print "command you are executing ", " ".join(commandList)
 
-f = open(logfile, 'w')
-try:
-	output = check_output(commandList, stderr=f)
-except CalledProcessError as e:
-	print "Program failed, please check the log for details"
-	exit()
-
-f.close()
-print "The program finished, evaluating reconstruction error..."
-'''
-W = LoadMatrix(sys.argv[len(sys.argv)-2])
-H = LoadMatrix(sys.argv[len(sys.argv)-1])
-V, select = LoadSparseMatrix(sys.argv[len(sys.argv)-3])
+W = LoadMatrix(sys.argv[2])
+H = LoadMatrix(sys.argv[3])
+V, select = LoadSparseMatrix(sys.argv[1])
 error = CalculateError(V,W,H,select)
-print "Reconstruction error:", error
+print "Reconstruction RMSE:", error
 
