@@ -6,7 +6,7 @@ __author__ = 'LiuShifeng'
 # An implementation of matrix factorization
 #
 import os
-import numpy
+import numpy as np
 import math
 from scipy import sparse
 
@@ -21,11 +21,12 @@ class STE():
         self.Wm = Wm
         print Wm
 
-        self.ratings = numpy.array(rating_tuples).astype(float)
+        self.ratings = np.array(rating_tuples).astype(float)
+        self.socials = np.array(social_tuples).astype(float)
         self.converged = False
 
-        self.num_users = int(numpy.max(self.ratings[:, 0]) + 1)
-        self.num_items = int(numpy.max(self.ratings[:, 1]) + 1)
+        self.num_users = int(np.max(self.ratings[:, 0]) + 1)
+        self.num_items = int(np.max(self.ratings[:, 1]) + 1)
 
         print (self.num_users, self.num_items, self.latent_d)
         print self.ratings
@@ -34,26 +35,39 @@ class STE():
         row = []
         col = []
         select = []
-        for relation in social_tuples:
-            row.append( int(relation[0]) )
-            col.append( int(relation[1]) )
-            val.append( float(relation[2]) )
-            select.append( (int(relation[0]), int(relation[1])) )
-        self.socials = sparse.csr_matrix( (val, (row, col)),shape=(self.num_users,self.num_users) )
+        for rating in rating_tuples:
+            row.append( int(rating[0]) )
+            col.append( int(rating[1]) )
+            val.append( float(rating[2]) )
+            select.append( (int(rating[0]), int(rating[1])) )
+        self.rating_matrix = sparse.csr_matrix( (val, (row, col)),shape=(self.num_users,self.num_items) )
 
-        self.users = numpy.random.random((self.num_users, self.latent_d))
-        self.items = numpy.random.random((self.num_items, self.latent_d))
+        self.users = np.random.random((self.num_users, self.latent_d))
+        self.items = np.random.random((self.num_items, self.latent_d))
 
-        self.new_users = numpy.random.random((self.num_users, self.latent_d))
-        self.new_items = numpy.random.random((self.num_items, self.latent_d))
+        self.new_users = np.random.random((self.num_users, self.latent_d))
+        self.new_items = np.random.random((self.num_items, self.latent_d))
+
+        self.current_loss = self.loss()
 
     def loss(self, users=None, items=None, socials = None):
         if users is None:
             users = self.users
         if items is None:
             items = self.items
-        if socials is None:
-            socials = self.socials
+        social_error = np.copy(users)
+
+        for social_tuple in self.socials:
+            if len(social_tuple) == 2:
+                (i, j) = social_tuple
+                rating = 1
+                weight = 1
+            elif len(social_tuple) == 3:
+                (i, j, rating) = social_tuple
+                weight = 1
+            elif len(social_tuple) == 4:
+                (i, j, rating, weight) = social_tuple
+            social_error[i] +=  (1 - self.lambda_c) * rating * users[j] * weight / self.lambda_c
 
         sq_error = 0
 
@@ -64,12 +78,7 @@ class STE():
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
 
-            r_hat_ui = numpy.sum(users[i] * items[j])
-            r_hat_social = 0.0
-            for v in range(self.num_users):
-                r_hat_temp = numpy.sum(users[v] * items[j])
-                r_hat_social += socials[i,v] * r_hat_temp
-            r_hat = self.lambda_c * r_hat_ui + (1-self.lambda_c) * r_hat_social
+            r_hat = self.lambda_c * np.sum(social_error[i] * items[j])
 
             if rating == 0.0 :
                 sq_error += self.Wm * weight * (rating - r_hat)**2
@@ -91,8 +100,21 @@ class STE():
 
     def update(self):
 
-        updates_u = numpy.zeros((self.num_users, self.latent_d))
-        updates_v = numpy.zeros((self.num_items, self.latent_d))
+        updates_u = np.zeros((self.num_users, self.latent_d))
+        updates_v = np.zeros((self.num_items, self.latent_d))
+        social_error = np.copy(self.users)
+        #prepare U+sum(SU)*(1-alpha)/alpha
+        for social_tuple in self.socials:
+            if len(social_tuple) == 2:
+                (i, j) = social_tuple
+                rating = 1
+                weight = 1
+            elif len(social_tuple) == 3:
+                (i, j, rating) = social_tuple
+                weight = 1
+            elif len(social_tuple) == 4:
+                (i, j, rating, weight) = social_tuple
+            social_error[i] +=  (1 - self.lambda_c) * rating * self.users[j] * weight / self.lambda_c
 
         for rating_tuple in self.ratings:
             if len(rating_tuple) == 3:
@@ -100,42 +122,39 @@ class STE():
                 weight = 1
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
-            r_hat_rating = numpy.sum(self.users[i] * self.items[j])
-            r_hat_social = 0.0
-            for neighbour in range(self.num_users):
-                r_hat_social += self.socials[i,neighbour] * numpy.sum(self.users[neighbour] * self.items[j])
-            r_hat = self.lambda_c * r_hat_rating + (1 - self.lambda_c) * r_hat_social
+
+            r_hat = self.lambda_c * np.sum(social_error[i] * self.items[j])
 
             for d in range(self.latent_d):
-                # u contribution to u' gradient
-                gradient_u = self.lambda_c * self.items[j, d] * (rating - r_hat) * weight
-
-                # u contribution to u'neighbours'gradient
-                for neighbour in range(self.num_users):
-                    if self.socials[i,neighbour] == 0.0:
-                        continue
-                    gradient_n = (1 - self.lambda_c) * self.socials[i,neighbour] * self.items[j, d] * (rating - r_hat) * weight
-                    if rating == 0.0:
-                        updates_u[neighbour,d] += gradient_n * self.Wm
-                    else:
-                        updates_u[neighbour,d] += gradient_n
-
-                #v contribution to v' gradient
-                gradient_v = self.lambda_c * self.users[i,d]
-                for neighbour in range(self.num_users):
-                    gradient_v += (1 - self.lambda_c) * self.socials[i,neighbour] * self.users[neighbour,d]
-                gradient_v = gradient_v * (rating - r_hat) * weight
-
                 if rating == 0.0:
                     print "update rating 0 "
-                    updates_u[i, d] += gradient_u * self.Wm
-                    updates_v[j, d] += gradient_v * self.Wm
+                    updates_u[i, d] += self.items[j, d] * (rating - r_hat) * weight * self.lambda_c * self.Wm
+                    updates_v[j, d] += social_error[i, d] * (rating - r_hat) * weight * self.lambda_c * self.Wm
                 else:
-                    updates_u[i, d] += gradient_u
-                    updates_v[j, d] += gradient_v
+                    updates_u[i, d] += self.items[j, d] * (rating - r_hat) * weight * self.lambda_c
+                    updates_v[j, d] += social_error[i, d] * (rating - r_hat) * weight * self.lambda_c
+
+        #update the social gradient
+        for social_tuple in self.socials:
+            if len(social_tuple) == 2:
+                (i, j) = social_tuple
+                rating = 1
+                weight = 1
+            if len(social_tuple) == 3:
+                (i, j, rating) = social_tuple
+                weight = 1
+            elif len(social_tuple) == 4:
+                (i, j, rating, weight) = social_tuple
+
+            for item in range(self.num_items):
+                gradient_j = (self.rating_matrix[i,item] - self.lambda_c * np.sum(social_error[i] * self.items[item])) * (1 - self.lambda_c) * rating * self.items[item]
+                if self.rating_matrix[i,item] == 0.0:
+                    updates_u[j] += gradient_j * weight * self.Wm
+                else:
+                    updates_u[j] += gradient_j * weight
 
         while (not self.converged):
-            initial_lik = self.loss()
+            initial_lik = self.current_loss
 
             print "  setting learning rate =", self.learning_rate
             self.try_updates(updates_u, updates_v)
@@ -148,7 +167,7 @@ class STE():
 
                 if initial_lik -  final_lik< 10:
                     self.converged = True
-
+                self.current_loss = final_lik
                 break
             else:
                 self.learning_rate *= .5
@@ -161,30 +180,25 @@ class STE():
 
 
     def apply_updates(self, updates_u, updates_v):
-        for i in range(self.num_users):
-            for d in range(self.latent_d):
-                self.users[i, d] = self.new_users[i, d]
-
-        for i in range(self.num_items):
-            for d in range(self.latent_d):
-                self.items[i, d] = self.new_items[i, d]
+        self.users = np.copy(self.new_users)
+        self.items = np.copy(self.new_items)
 
     def try_updates(self, updates_u, updates_v):
         alpha = self.learning_rate
 
         for i in range(self.num_users):
-            for d in range(self.latent_d):
-                self.new_users[i,d] = self.users[i, d] + \
-                                       alpha * (-self.lambda_u * self.users[i, d] + 2*updates_u[i, d])
+            self.new_users[i] = self.users[i] + \
+                                    alpha * (-self.lambda_u * self.users[i] + 2*updates_u[i])
         for i in range(self.num_items):
-            for d in range(self.latent_d):
-                self.new_items[i, d] = self.items[i, d] + \
-                                       alpha * (-self.lambda_v * self.items[i, d] + 2*updates_v[i, d])
+            self.new_items[i] = self.items[i] + \
+                                    alpha * (-self.lambda_v * self.items[i] + 2*updates_v[i])
 
     def undo_updates(self):
         # Don't need to do anything here
         pass
 
+    def get_current_loss(self):
+        return self.current_loss
 
     def print_latent_vectors(self):
         print "Users"
@@ -259,7 +273,7 @@ class STE():
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
 
-            r_hat = numpy.sum(users[i] * items[j])
+            r_hat = np.sum(users[i] * items[j])
 
             if rating == float(0.0) :
                 rmse += self.Wm * weight * (rating - r_hat)**2
@@ -292,9 +306,9 @@ class STE():
                 Nu[int(i)] += 1
                 u = []
                 for ii in range(self.num_items):
-                    u.append(numpy.sum(users[int(i)] * items[ii]))
+                    u.append(np.sum(users[int(i)] * items[ii]))
                 u.sort(reverse = True)
-                r_hat = numpy.sum(users[int(i)] * items[j])
+                r_hat = np.sum(users[int(i)] * items[j])
                 if u.index(r_hat) < K:
                     Nku[int(i)] += 1
 
@@ -315,7 +329,7 @@ def real_ratings(bench = 0.0):
 
     # Get ratings per user.
     pwd=os.getcwd()
-    infile = open(os.path.join(pwd, 'u.csv'), 'r')
+    infile = open(os.path.join(pwd, 'ratings_data.csv'), 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
         if float(f[2]) > bench:
@@ -324,7 +338,7 @@ def real_ratings(bench = 0.0):
     infile.close()
 
     #Get social relationships.
-    infile = open(os.path.join(pwd, 'u.csv'), 'r')
+    infile = open(os.path.join(pwd, 'trust_data.csv'), 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
         if len(f) == 2:
@@ -340,13 +354,15 @@ if __name__ == "__main__":
 
     ratings,socials = real_ratings(bench = 0.0)
 
-    pmf = STE(ratings, socials, latent_d=5, lambda_c = 0.1, lambda_u = 0.1, lambda_v = 0.1, Wm = 0.0)
+    pmf = STE(ratings, socials, latent_d=10, lambda_c = 0.001, lambda_u = 0.001, lambda_v = 0.001, Wm = 0.0)
+    iterations = 5000
     liks = []
     print "before RMSE ",pmf.rmse()
-    while (pmf.update()):
-        lik = pmf.loss()
+    while (pmf.update() and iterations>0):
+        lik = pmf.get_current_loss()
         liks.append(lik)
         print "L=", lik
+        iterations -= 1
         pass
 
     print "after RMSE ",pmf.rmse()

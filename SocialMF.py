@@ -6,7 +6,7 @@ __author__ = 'LiuShifeng'
 # An implementation of matrix factorization
 #
 import os
-import numpy
+import numpy as np
 import math
 from scipy import sparse
 
@@ -21,14 +21,22 @@ class SocialMF():
         self.Wm = Wm
         print Wm
 
-        self.ratings = numpy.array(rating_tuples).astype(float)
+        self.ratings = np.array(rating_tuples).astype(float)
         self.converged = False
 
-        self.num_users = int(numpy.max(self.ratings[:, 0]) + 1)
-        self.num_items = int(numpy.max(self.ratings[:, 1]) + 1)
+        self.num_users = int(np.max(self.ratings[:, 0]) + 1)
+        self.num_items = int(np.max(self.ratings[:, 1]) + 1)
 
         print (self.num_users, self.num_items, self.latent_d)
         print self.ratings
+
+        self.neighbours  = np.zeros((self.num_users,1))
+        for relation in social_tuples:
+            self.neighbours[int(relation[0])] += 1
+        print self.neighbours
+        for relation in social_tuples:
+            relation[2] /= self.neighbours[int(relation[0])]
+        self.socials = np.array(social_tuples).astype(float)
 
         val = []
         row = []
@@ -39,13 +47,16 @@ class SocialMF():
             col.append( int(relation[1]) )
             val.append( float(relation[2]) )
             select.append( (int(relation[0]), int(relation[1])) )
-        self.socials = sparse.csr_matrix( (val, (row, col)),shape=(self.num_users,self.num_users) )
+        self.socials_matrix = sparse.csr_matrix( (val, (row, col)),shape=(self.num_users,self.num_users) )
 
-        self.users = numpy.random.random((self.num_users, self.latent_d))
-        self.items = numpy.random.random((self.num_items, self.latent_d))
+        self.users = np.random.random((self.num_users, self.latent_d))
+        self.items = np.random.random((self.num_items, self.latent_d))
 
-        self.new_users = numpy.random.random((self.num_users, self.latent_d))
-        self.new_items = numpy.random.random((self.num_items, self.latent_d))
+        self.new_users = np.random.random((self.num_users, self.latent_d))
+        self.new_items = np.random.random((self.num_items, self.latent_d))
+
+        self.current_loss = self.loss()
+        print self.current_loss
 
     def loss(self, users=None, items=None, socials = None):
         if users is None:
@@ -53,7 +64,8 @@ class SocialMF():
         if items is None:
             items = self.items
         if socials is None:
-            socials = self.socials
+            socials = self.socials_matrix
+        social_error = np.copy(users)
 
         sq_error = 0
 
@@ -64,7 +76,7 @@ class SocialMF():
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
 
-            r_hat = numpy.sum(users[i] * items[j])
+            r_hat = np.sum(users[i] * items[j])
 
             if rating == 0.0 :
                 sq_error += self.Wm * weight * (rating - r_hat)**2
@@ -72,13 +84,20 @@ class SocialMF():
             else:
                 sq_error += weight * (rating - r_hat)**2
         # Loss part for social network
-        for user in range(self.num_users):
-            error = users[user]
-            for neighbour in range(self.num_users):
-                Suv = socials[user,neighbour]
-                error -= Suv * users[neighbour]
+        for social_tuple in self.socials:
+            if len(social_tuple) == 2:
+                (i, j) = social_tuple
+                rating = 1
+                weight = 1
+            elif len(social_tuple) == 3:
+                (i, j, rating) = social_tuple
+                weight = 1
+            elif len(social_tuple) == 4:
+                (i, j, rating, weight) = social_tuple
+            social_error[i] -= socials[i,j] * users[j] * weight
 
-        sq_error += self.lambda_c * (numpy.sum(error * error))**2
+        for error in range(self.num_users):
+            sq_error += self.lambda_c * (np.sum(social_error[error] * social_error[error]))
 
         L2_norm = 0
         for i in range(self.num_users):
@@ -94,8 +113,9 @@ class SocialMF():
 
     def update(self):
 
-        updates_u = numpy.zeros((self.num_users, self.latent_d))
-        updates_v = numpy.zeros((self.num_items, self.latent_d))
+        updates_u = np.zeros((self.num_users, self.latent_d))
+        updates_v = np.zeros((self.num_items, self.latent_d))
+        social_error = np.copy(self.users)
 
         for rating_tuple in self.ratings:
             if len(rating_tuple) == 3:
@@ -104,7 +124,7 @@ class SocialMF():
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
 
-            r_hat = numpy.sum(self.users[i] * self.items[j])
+            r_hat = np.sum(self.users[i] * self.items[j])
 
             for d in range(self.latent_d):
                 if rating == 0.0:
@@ -115,30 +135,35 @@ class SocialMF():
                     updates_u[i, d] += self.items[j, d] * (rating - r_hat) * weight
                     updates_v[j, d] += self.users[i, d] * (rating - r_hat) * weight
 
-        #update the social part
-        for user in range(self.num_users):
-            for d in range(self.latent_d):
-                s_gradient1 = self.users[user,d]
-                s_gradient2 = 0.0
-                for neighbour in range(self.num_users):
-                    Suv = self.socials[user,neighbour]
-                    s_gradient1 -= Suv * self.users[neighbour,d]
+        #update the social error part
+        for social_tuple in self.socials:
+            if len(social_tuple) == 2:
+                (i, j) = social_tuple
+                rating = 1
+                weight = 1
+            if len(social_tuple) == 3:
+                (i, j, rating) = social_tuple
+                weight = 1
+            elif len(social_tuple) == 4:
+                (i, j, rating, weight) = social_tuple
+            social_error[i] -= self.socials_matrix[i,j] * self.users[j] * weight
 
-                    Svu = self.socials[neighbour,user]
-                    s2s = self.users[neighbour,d]
-                    if Svu == 0.0:
-                        continue
-                    for nn in range(self.num_users):
-                        Svj = self.socials[neighbour,nn]
-                        if Svj == 0.0:
-                            continue
-                        s2s -= Svj * self.users[nn,d]
-                    s_gradient2 -= Svu * s2s
-
-            updates_u[i,d] -= self.lambda_c * (s_gradient1 + s_gradient2)
+        #update the social gradient
+        for social_tuple in self.socials:
+            if len(social_tuple) == 2:
+                (i, j) = social_tuple
+                rating = 1
+                weight = 1
+            if len(social_tuple) == 3:
+                (i, j, rating) = social_tuple
+                weight = 1
+            elif len(social_tuple) == 4:
+                (i, j, rating, weight) = social_tuple
+            updates_u[i] -= self.lambda_c * social_error[i] * weight
+            updates_u[j] += self.lambda_c * self.socials_matrix[i,j] * social_error[i] * weight
 
         while (not self.converged):
-            initial_lik = self.loss()
+            initial_lik = self.current_loss
 
             print "  setting learning rate =", self.learning_rate
             self.try_updates(updates_u, updates_v)
@@ -151,7 +176,7 @@ class SocialMF():
 
                 if initial_lik -  final_lik< 10:
                     self.converged = True
-
+                self.current_loss = final_lik
                 break
             else:
                 self.learning_rate *= .5
@@ -164,30 +189,25 @@ class SocialMF():
 
 
     def apply_updates(self, updates_u, updates_v):
-        for i in range(self.num_users):
-            for d in range(self.latent_d):
-                self.users[i, d] = self.new_users[i, d]
-
-        for i in range(self.num_items):
-            for d in range(self.latent_d):
-                self.items[i, d] = self.new_items[i, d]
+        self.users = np.copy(self.new_users)
+        self.items = np.copy(self.new_items)
 
     def try_updates(self, updates_u, updates_v):
         alpha = self.learning_rate
 
         for i in range(self.num_users):
-            for d in range(self.latent_d):
-                self.new_users[i,d] = self.users[i, d] + \
-                                       alpha * (-self.lambda_u * self.users[i, d] + 2*updates_u[i, d])
+            self.new_users[i] = self.users[i,] + \
+                                       alpha * (-self.lambda_u * self.users[i,] + 2*updates_u[i])
         for i in range(self.num_items):
-            for d in range(self.latent_d):
-                self.new_items[i, d] = self.items[i, d] + \
-                                       alpha * (-self.lambda_v * self.items[i, d] + 2*updates_v[i, d])
+            self.new_items[i] = self.items[i] + \
+                                       alpha * (-self.lambda_v * self.items[i] + 2*updates_v[i])
 
     def undo_updates(self):
         # Don't need to do anything here
         pass
 
+    def get_current_loss(self):
+        return self.current_loss
 
     def print_latent_vectors(self):
         print "Users"
@@ -262,13 +282,12 @@ class SocialMF():
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
 
-            r_hat = numpy.sum(users[i] * items[j])
+            r_hat = np.sum(users[i] * items[j])
 
             if rating == float(0.0) :
                 rmse += self.Wm * weight * (rating - r_hat)**2
             else:
                 rmse += weight * (rating - r_hat)**2
-
         return math.sqrt(rmse/T)
 
     def topK_Hit_Ratio(self, users=None, items=None,K=5,relevent_bench=5):
@@ -295,9 +314,9 @@ class SocialMF():
                 Nu[int(i)] += 1
                 u = []
                 for ii in range(self.num_items):
-                    u.append(numpy.sum(users[int(i)] * items[ii]))
+                    u.append(np.sum(users[int(i)] * items[ii]))
                 u.sort(reverse = True)
-                r_hat = numpy.sum(users[int(i)] * items[j])
+                r_hat = np.sum(users[int(i)] * items[j])
                 if u.index(r_hat) < K:
                     Nku[int(i)] += 1
 
@@ -318,7 +337,7 @@ def real_ratings(bench = 0.0):
 
     # Get ratings per user.
     pwd=os.getcwd()
-    infile = open(os.path.join(pwd, 'u.csv'), 'r')
+    infile = open(os.path.join(pwd, 'ratings_data.csv'), 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
         if float(f[2]) > bench:
@@ -327,13 +346,13 @@ def real_ratings(bench = 0.0):
     infile.close()
 
     #Get social relationships.
-    infile = open(os.path.join(pwd, 'u.csv'), 'r')
+    infile = open(os.path.join(pwd, 'trust_data.csv'), 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
         if len(f) == 2:
-            f = (float(f[0]),float(f[1]),float(1))
+            f = [float(f[0]),float(f[1]),float(1)]
         else:
-            f = (float(f[0]),float(f[1]),float(f[2]))
+            f = [float(f[0]),float(f[1]),float(f[2])]
         socials.append(f)
     infile.close()
 
@@ -343,18 +362,21 @@ if __name__ == "__main__":
 
     ratings,socials = real_ratings(bench = 0.0)
 
-    pmf = SocialMF(ratings, socials, latent_d=5, lambda_c = 0.1, lambda_u = 0.1, lambda_v = 0.1, Wm = 0.0)
+    pmf = SocialMF(ratings, socials, latent_d=10, lambda_c = 0.01, lambda_u = 0.001, lambda_v = 0.001, Wm = 0.0)
+    iterations = 5000
     liks = []
     print "before RMSE ",pmf.rmse()
-    while (pmf.update()):
-        lik = pmf.loss()
+    while (pmf.update() and iterations>0):
+        lik = pmf.get_current_loss()
         liks.append(lik)
         print "L=", lik
+        iterations -= 1
         pass
 
     print "after RMSE ",pmf.rmse()
     Hk,recall = pmf.topK_Hit_Ratio()
-    print Hk,recall
+    print "Hk = ",Hk
+    print "recall = ",recall
     '''
     pmf.save_Users('Mf\Users.data')
     pmf.save_Items('MF\Items.data')

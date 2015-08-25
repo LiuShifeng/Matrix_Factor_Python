@@ -5,7 +5,7 @@
 # An implementation of matrix factorization
 #
 import os
-import numpy
+import numpy as np
 import math
 
 class ProbabilisticMatrixFactorization():
@@ -17,21 +17,22 @@ class ProbabilisticMatrixFactorization():
         self.Wm = Wm
         print Wm
 
-        self.ratings = numpy.array(rating_tuples).astype(float)
+        self.ratings = np.array(rating_tuples).astype(float)
         self.converged = False
 
-        self.num_users = int(numpy.max(self.ratings[:, 0]) + 1)
-        self.num_items = int(numpy.max(self.ratings[:, 1]) + 1)
+        self.num_users = int(np.max(self.ratings[:, 0]) + 1)
+        self.num_items = int(np.max(self.ratings[:, 1]) + 1)
         
         print (self.num_users, self.num_items, self.latent_d)
         print self.ratings
 
-        self.users = numpy.random.random((self.num_users, self.latent_d))
-        self.items = numpy.random.random((self.num_items, self.latent_d))
+        self.users = np.random.random((self.num_users, self.latent_d))
+        self.items = np.random.random((self.num_items, self.latent_d))
 
-        self.new_users = numpy.random.random((self.num_users, self.latent_d))
-        self.new_items = numpy.random.random((self.num_items, self.latent_d))           
+        self.new_users = np.random.random((self.num_users, self.latent_d))
+        self.new_items = np.random.random((self.num_items, self.latent_d))
 
+        self.current_loss = self.loss()
 
     def loss(self, users=None, items=None):
         if users is None:
@@ -48,7 +49,7 @@ class ProbabilisticMatrixFactorization():
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
             
-            r_hat = numpy.sum(users[i] * items[j])
+            r_hat = np.sum(users[i] * items[j])
 
             if rating == 0.0 :
                 sq_error += self.Wm * weight * (rating - r_hat)**2
@@ -69,8 +70,8 @@ class ProbabilisticMatrixFactorization():
         
     def update(self):
 
-        updates_o = numpy.zeros((self.num_users, self.latent_d))
-        updates_d = numpy.zeros((self.num_items, self.latent_d))        
+        updates_o = np.zeros((self.num_users, self.latent_d))
+        updates_d = np.zeros((self.num_items, self.latent_d))
 
         for rating_tuple in self.ratings:
             if len(rating_tuple) == 3:
@@ -79,7 +80,7 @@ class ProbabilisticMatrixFactorization():
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
             
-            r_hat = numpy.sum(self.users[i] * self.items[j])
+            r_hat = np.sum(self.users[i] * self.items[j])
             
             for d in range(self.latent_d):
                 if rating == 0.0:
@@ -91,7 +92,7 @@ class ProbabilisticMatrixFactorization():
                     updates_d[j, d] += self.users[i, d] * (rating - r_hat) * weight
 
         while (not self.converged):
-            initial_lik = self.loss()
+            initial_lik = self.current_loss
 
             print "  setting learning rate =", self.learning_rate
             self.try_updates(updates_o, updates_d)
@@ -104,7 +105,7 @@ class ProbabilisticMatrixFactorization():
 
                 if initial_lik -  final_lik< 10:
                     self.converged = True
-                    
+                self.current_loss = final_lik
                 break
             else:
                 self.learning_rate *= .5
@@ -114,36 +115,29 @@ class ProbabilisticMatrixFactorization():
                 self.converged = True
 
         return not self.converged
-    
 
     def apply_updates(self, updates_o, updates_d):
-        for i in range(self.num_users):
-            for d in range(self.latent_d):
-                self.users[i, d] = self.new_users[i, d]
-
-        for i in range(self.num_items):
-            for d in range(self.latent_d):
-                self.items[i, d] = self.new_items[i, d]                
-
+        self.users = np.copy(self.new_users)
+        self.items = np.copy(self.new_items)
     
     def try_updates(self, updates_o, updates_d):        
         alpha = self.learning_rate
         beta = -self.regularization_strength
 
         for i in range(self.num_users):
-            for d in range(self.latent_d):
-                self.new_users[i,d] = self.users[i, d] + \
-                                       alpha * (beta * self.users[i, d] + 2*updates_o[i, d])
+            self.new_users[i] = self.users[i] + \
+                                       alpha * (beta * self.users[i] + 2*updates_o[i])
         for i in range(self.num_items):
-            for d in range(self.latent_d):
-                self.new_items[i, d] = self.items[i, d] + \
-                                       alpha * (beta * self.items[i, d] + 2*updates_d[i, d])
+            self.new_items[i] = self.items[i] + \
+                                       alpha * (beta * self.items[i] + 2*updates_d[i])
         
 
     def undo_updates(self):
         # Don't need to do anything here
         pass
 
+    def get_current_loss(self):
+        return self.current_loss
 
     def print_latent_vectors(self):
         print "Users"
@@ -218,7 +212,7 @@ class ProbabilisticMatrixFactorization():
             elif len(rating_tuple) == 4:
                 (i, j, rating, weight) = rating_tuple
             
-            r_hat = numpy.sum(users[i] * items[j])
+            r_hat = np.sum(users[i] * items[j])
 
             if rating == float(0.0) :
                 rmse += self.Wm * weight * (rating - r_hat)**2
@@ -251,9 +245,9 @@ class ProbabilisticMatrixFactorization():
                 Nu[int(i)] += 1
                 u = []
                 for ii in range(self.num_items):
-                    u.append(numpy.sum(users[int(i)] * items[ii]))
+                    u.append(np.sum(users[int(i)] * items[ii]))
                 u.sort(reverse = True)
-                r_hat = numpy.sum(users[int(i)] * items[j])
+                r_hat = np.sum(users[int(i)] * items[j])
                 if u.index(r_hat) < K:
                     Nku[int(i)] += 1
 
@@ -281,24 +275,24 @@ def fake_ratings(noise=.25):
     
     # Generate the latent user and item vectors
     for i in range(num_users):
-        u.append(2 * numpy.random.randn(latent_dimension))
+        u.append(2 * np.random.randn(latent_dimension))
     for i in range(num_items):
-        v.append(2 * numpy.random.randn(latent_dimension))
+        v.append(2 * np.random.randn(latent_dimension))
         
     # Get num_ratings ratings per user.
     for i in range(num_users):
-        items_rated = numpy.random.permutation(num_items)[:num_ratings]
+        items_rated = np.random.permutation(num_items)[:num_ratings]
 
         for jj in range(num_ratings):
             j = items_rated[jj]
-            rating = numpy.sum(u[i] * v[j]) + noise * numpy.random.randn()
+            rating = np.sum(u[i] * v[j]) + noise * np.random.randn()
         
             ratings.append((i, j, rating))  # thanks sunquiang
 
     return (ratings, u, v)
 
 
-def real_ratings(noise=.25):
+def real_ratings(bench = 0.0):
     u = []
     v = []
     ratings = []
@@ -309,17 +303,18 @@ def real_ratings(noise=.25):
     
     # Generate the latent user and item vectors
     for i in range(num_users):
-        u.append(2 * numpy.random.randn(latent_dimension))
+        u.append(2 * np.random.randn(latent_dimension))
     for i in range(num_items):
-        v.append(2 * numpy.random.randn(latent_dimension))
+        v.append(2 * np.random.randn(latent_dimension))
         
     # Get ratings per user.
     pwd=os.getcwd()
-    infile = open(os.path.join(pwd, 'u.data'), 'r')
+    infile = open(os.path.join(pwd, 'u.csv'), 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
-        f = (float(f[0]),float(f[1]),float(f[2]))
-        ratings.append(f)
+        if float(f[2]) > bench:
+            f = (float(f[0]),float(f[1]),float(f[2]))
+            ratings.append(f)
 
     return (ratings, u, v)
 
@@ -331,19 +326,20 @@ if __name__ == "__main__":
     if DATASET == 'fake':
         (ratings, true_o, true_d) = fake_ratings()
     if DATASET == 'real':
-        (ratings, true_o, true_d) = real_ratings()
+        (ratings, true_o, true_d) = real_ratings(bench = 0.0)
     
 
     #plot_ratings(ratings)
 
     pmf = ProbabilisticMatrixFactorization(ratings, latent_d=5, beta=0.01,Wm=0.0)
-    
+    iterations = 5000
     liks = []
     print "before RMSE ",pmf.rmse()
-    while (pmf.update()):
-        lik = pmf.loss()
+    while (pmf.update() and iterations>0):
+        lik = pmf.get_current_loss()
         liks.append(lik)
         print "L=", lik
+        iterations -= 1
         pass
     
     print "after RMSE ",pmf.rmse()
