@@ -5,6 +5,7 @@
 # An implementation of matrix factorization
 #
 import os
+import sys
 import numpy as np
 import math
 
@@ -53,21 +54,14 @@ class ProbabilisticMatrixFactorization():
 
             if rating == 0.0 :
                 sq_error += self.Wm * weight * (rating - r_hat)**2
-                print "Loss rating 0"
             else:
                 sq_error += weight * (rating - r_hat)**2
         L2_norm = 0
-        for i in range(self.num_users):
-            for d in range(self.latent_d):
-                L2_norm += users[i, d]**2
-
-        for i in range(self.num_items):
-            for d in range(self.latent_d):
-                L2_norm += items[i, d]**2
+        L2_norm += np.sum(users*users)
+        L2_norm += np.sum(items*items)
 
         return sq_error + self.regularization_strength * L2_norm
-        
-        
+
     def update(self):
 
         updates_o = np.zeros((self.num_users, self.latent_d))
@@ -81,15 +75,13 @@ class ProbabilisticMatrixFactorization():
                 (i, j, rating, weight) = rating_tuple
             
             r_hat = np.sum(self.users[i] * self.items[j])
-            
-            for d in range(self.latent_d):
-                if rating == 0.0:
-                    print "update rating 0 "
-                    updates_o[i, d] += self.items[j, d] * (rating - r_hat) * weight * self.Wm
-                    updates_d[j, d] += self.users[i, d] * (rating - r_hat) * weight * self.Wm
-                else:
-                    updates_o[i, d] += self.items[j, d] * (rating - r_hat) * weight
-                    updates_d[j, d] += self.users[i, d] * (rating - r_hat) * weight
+
+            if rating == 0.0:
+                updates_o[i] += self.items[j] * (rating - r_hat) * weight * self.Wm
+                updates_d[j] += self.users[i] * (rating - r_hat) * weight * self.Wm
+            else:
+                updates_o[i] += self.items[j] * (rating - r_hat) * weight
+                updates_d[j] += self.users[i] * (rating - r_hat) * weight
 
         while (not self.converged):
             initial_lik = self.current_loss
@@ -172,23 +164,23 @@ class ProbabilisticMatrixFactorization():
             
     def save_Users(self,path):
          pwd=os.getcwd()
-         outfile = open(os.path.join(pwd, path), 'w')
+         outfile = open(path, 'w')
          for i in range(self.num_users):
-            outfile.write (i)
-            for d in range(self.latent_d):
+            outfile.write (str(self.users[i, 0]))
+            for d in range(1,self.latent_d):
                 outfile.write(",")
-                outfile.write (self.users[i, d])                
+                outfile.write (str(self.users[i, d]))
             outfile.write ('\n')
          outfile.close() 
 
     def save_Items(self,path):
          pwd=os.getcwd()
-         outfile = open(os.path.join(pwd, path), 'w')
+         outfile = open(path, 'w')
          for i in range(self.num_items):
-            outfile.write (i)
-            for d in range(self.latent_d):
+            outfile.write (str(self.items[i, 0]))
+            for d in range(1,self.latent_d):
                 outfile.write(",")
-                outfile.write (self.items[i, d])                
+                outfile.write (str(self.items[i, d]))
             outfile.write ('\n')
          outfile.close() 
          
@@ -261,77 +253,34 @@ class ProbabilisticMatrixFactorization():
         Hk = Hk/T
         recall = sumNku/sumNu
         return Hk,recall
-        
 
-def fake_ratings(noise=.25):
-    u = []
-    v = []
+def real_ratings(file_path,bench = 0.0):
     ratings = []
-    
-    num_users = 100
-    num_items = 100
-    num_ratings = 30
-    latent_dimension = 10
-    
-    # Generate the latent user and item vectors
-    for i in range(num_users):
-        u.append(2 * np.random.randn(latent_dimension))
-    for i in range(num_items):
-        v.append(2 * np.random.randn(latent_dimension))
-        
-    # Get num_ratings ratings per user.
-    for i in range(num_users):
-        items_rated = np.random.permutation(num_items)[:num_ratings]
-
-        for jj in range(num_ratings):
-            j = items_rated[jj]
-            rating = np.sum(u[i] * v[j]) + noise * np.random.randn()
-        
-            ratings.append((i, j, rating))  # thanks sunquiang
-
-    return (ratings, u, v)
-
-
-def real_ratings(bench = 0.0):
-    u = []
-    v = []
-    ratings = []
-    
-    num_users = 100
-    num_items = 100
-    latent_dimension = 10
-    
-    # Generate the latent user and item vectors
-    for i in range(num_users):
-        u.append(2 * np.random.randn(latent_dimension))
-    for i in range(num_items):
-        v.append(2 * np.random.randn(latent_dimension))
-        
     # Get ratings per user.
     pwd=os.getcwd()
-    infile = open(os.path.join(pwd, 'u.csv'), 'r')
+    infile = open(file_path, 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
         if float(f[2]) > bench:
             f = (float(f[0]),float(f[1]),float(f[2]))
             ratings.append(f)
-
-    return (ratings, u, v)
+    return ratings
 
 if __name__ == "__main__":
+    if len(sys.argv) <> 7:
+        print ''
+        print 'Usage:  %s <file_path> \
+                <latent_d_value> <beta_value> <Wm_value> \
+                <output_U_filename> <output_V_filename>' % sys.argv[0]
+        print ''
+        sys.exit(1)
+    file_path = sys.argv[1]
+    latent_d_value = int(sys.argv[2])
+    beta_value,Wm_value = map(float,sys.argv[3:5])
+    output_U_filename, output_V_filename = sys.argv[5:7]
 
-    #DATASET = 'fake'
-    DATASET = 'real'
-
-    if DATASET == 'fake':
-        (ratings, true_o, true_d) = fake_ratings()
-    if DATASET == 'real':
-        (ratings, true_o, true_d) = real_ratings(bench = 0.0)
-    
-
-    #plot_ratings(ratings)
-
-    pmf = ProbabilisticMatrixFactorization(ratings, latent_d=5, beta=0.01,Wm=0.0)
+    ratings = real_ratings(file_path,bench = 0.0)
+    pmf = ProbabilisticMatrixFactorization(ratings, latent_d=latent_d_value, beta=beta_value,Wm=Wm_value)
     iterations = 5000
     liks = []
     print "before RMSE ",pmf.rmse()
@@ -343,12 +292,9 @@ if __name__ == "__main__":
         pass
     
     print "after RMSE ",pmf.rmse()
-    Hk,recall = pmf.topK_Hit_Ratio()
-    print Hk,recall
-    '''
-    pmf.save_Users('Mf\Users.data')
-    pmf.save_Items('MF\Items.data')
-    pmf.print_latent_vectors()
-    
-    pmf.save_latent_vectors("models/")
-'''
+    #Hk,recall = pmf.topK_Hit_Ratio()
+    #print Hk,recall
+    pmf.save_Users(output_U_filename)
+    pmf.save_Items(output_V_filename)
+    #pmf.print_latent_vectors()
+    #pmf.save_latent_vectors("models/")

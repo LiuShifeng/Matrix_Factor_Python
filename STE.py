@@ -5,7 +5,7 @@ __author__ = 'LiuShifeng'
 #
 # An implementation of matrix factorization
 #
-import os
+import os,sys
 import numpy as np
 import math
 from scipy import sparse
@@ -82,18 +82,12 @@ class STE():
 
             if rating == 0.0 :
                 sq_error += self.Wm * weight * (rating - r_hat)**2
-                print "Loss rating 0"
             else:
                 sq_error += weight * (rating - r_hat)**2
 
         L2_norm = 0
-        for i in range(self.num_users):
-            for d in range(self.latent_d):
-                L2_norm += self.lambda_u * users[i, d]**2
-
-        for i in range(self.num_items):
-            for d in range(self.latent_d):
-                L2_norm += self.lambda_v * items[i, d]**2
+        L2_norm += self.lambda_u * np.sum(users*users)
+        L2_norm += self.lambda_v * np.sum(items*items)
 
         return sq_error + L2_norm
 
@@ -125,14 +119,12 @@ class STE():
 
             r_hat = self.lambda_c * np.sum(social_error[i] * self.items[j])
 
-            for d in range(self.latent_d):
-                if rating == 0.0:
-                    print "update rating 0 "
-                    updates_u[i, d] += self.items[j, d] * (rating - r_hat) * weight * self.lambda_c * self.Wm
-                    updates_v[j, d] += social_error[i, d] * (rating - r_hat) * weight * self.lambda_c * self.Wm
-                else:
-                    updates_u[i, d] += self.items[j, d] * (rating - r_hat) * weight * self.lambda_c
-                    updates_v[j, d] += social_error[i, d] * (rating - r_hat) * weight * self.lambda_c
+            if rating == 0.0:
+                updates_u[i] += self.items[j] * (rating - r_hat) * weight * self.lambda_c * self.Wm
+                updates_v[j] += social_error[i] * (rating - r_hat) * weight * self.lambda_c * self.Wm
+            else:
+                updates_u[i] += self.items[j] * (rating - r_hat) * weight * self.lambda_c
+                updates_v[j] += social_error[i] * (rating - r_hat) * weight * self.lambda_c
 
         #update the social gradient
         for social_tuple in self.socials:
@@ -233,23 +225,23 @@ class STE():
 
     def save_Users(self,path):
          pwd=os.getcwd()
-         outfile = open(os.path.join(pwd, path), 'w')
+         outfile = open(path, 'w')
          for i in range(self.num_users):
-            outfile.write (i)
-            for d in range(self.latent_d):
+            outfile.write (str(self.users[i, 0]))
+            for d in range(1,self.latent_d):
                 outfile.write(",")
-                outfile.write (self.users[i, d])
+                outfile.write (str(self.users[i, d]))
             outfile.write ('\n')
          outfile.close()
 
     def save_Items(self,path):
          pwd=os.getcwd()
-         outfile = open(os.path.join(pwd, path), 'w')
+         outfile = open(path, 'w')
          for i in range(self.num_items):
-            outfile.write (i)
-            for d in range(self.latent_d):
+            outfile.write (str(self.items[i, 0]))
+            for d in range(1,self.latent_d):
                 outfile.write(",")
-                outfile.write (self.items[i, d])
+                outfile.write (str(self.items[i, d]))
             outfile.write ('\n')
          outfile.close()
 
@@ -323,13 +315,13 @@ class STE():
         recall = sumNku/sumNu
         return Hk,recall
 
-def real_ratings(bench = 0.0):
+def real_ratings(rating_path,social_path,bench = 0.0):
     ratings = []
     socials = []
 
     # Get ratings per user.
     pwd=os.getcwd()
-    infile = open(os.path.join(pwd, 'ratings_data.csv'), 'r')
+    infile = open(rating_path, 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
         if float(f[2]) > bench:
@@ -338,7 +330,7 @@ def real_ratings(bench = 0.0):
     infile.close()
 
     #Get social relationships.
-    infile = open(os.path.join(pwd, 'trust_data.csv'), 'r')
+    infile = open(social_path, 'r')
     for line in infile.readlines():
         f = line.rstrip('\r\n').split(",")
         if len(f) == 2:
@@ -351,10 +343,21 @@ def real_ratings(bench = 0.0):
     return ratings,socials
 
 if __name__ == "__main__":
+    if len(sys.argv) <> 10:
+        print ''
+        print 'Usage:  %s <rating_file_path> <social_file_path>\
+                <latent_d_value> <lambda_c_value> <lambda_u_value> <lambda_v_value> <Wm_value> \
+                <output_U_filename> <output_V_filename>' % sys.argv[0]
+        print ''
+        sys.exit(1)
+    rating_file_path,social_file_path = sys.argv[1:3]
+    latent_d_value = int(sys.argv[3])
+    lambda_c_value,lambda_u_value,lambda_v_value,Wm_value = map(float,sys.argv[4:8])
+    output_U_filename, output_V_filename = sys.argv[8:10]
 
-    ratings,socials = real_ratings(bench = 0.0)
+    ratings,socials = real_ratings(rating_file_path,social_file_path,bench = 0.0)
 
-    pmf = STE(ratings, socials, latent_d=10, lambda_c = 0.001, lambda_u = 0.001, lambda_v = 0.001, Wm = 0.0)
+    pmf = STE(ratings, socials, latent_d=latent_d_value, lambda_c = lambda_c_value, lambda_u = lambda_u_value, lambda_v = lambda_v_value, Wm = Wm_value)
     iterations = 5000
     liks = []
     print "before RMSE ",pmf.rmse()
@@ -366,12 +369,9 @@ if __name__ == "__main__":
         pass
 
     print "after RMSE ",pmf.rmse()
-    Hk,recall = pmf.topK_Hit_Ratio()
-    print Hk,recall
-    '''
-    pmf.save_Users('Mf\Users.data')
-    pmf.save_Items('MF\Items.data')
-    pmf.print_latent_vectors()
-
-    pmf.save_latent_vectors("models/")
-'''
+    #Hk,recall = pmf.topK_Hit_Ratio()
+    #print Hk,recall
+    pmf.save_Users(output_U_filename)
+    pmf.save_Items(output_V_filename)
+    #pmf.print_latent_vectors()
+    #pmf.save_latent_vectors("models/")
